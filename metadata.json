@@ -1,0 +1,7 @@
+{
+  "name": "RD-1 Content Engine",
+  "description": "A specialized AI middleware designed to bridge the gap between Founder Consciousness and Market Authority. Transforms voice/text into high-impact LinkedIn content.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
