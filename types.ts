@@ -28,6 +28,13 @@ export interface GeneratedContent {
   rawResponse: string;
 }
 
+export interface HistoryItem {
+  id: string;
+  timestamp: string;
+  preview: string;
+  content: GeneratedContent;
+}
+
 export interface StrategyIdea {
   headline: string;
   hook: string;
@@ -35,7 +42,7 @@ export interface StrategyIdea {
 }
 
 export interface StrategyResult {
-  painPointAnalysis: string; // New field for the Agent to explain the identified problem
+  painPointAnalysis: string;
   howTo: StrategyIdea[];
   listicles: StrategyIdea[];
   contrarian: StrategyIdea[];

@@ -2,7 +2,8 @@ import { GoogleGenAI, Chat, GenerateContentResponse } from "@google/genai";
 import { GeneratedContent, ContentTheme, StrategyResult } from "../types";
 
 // RD-1 Configuration Constants
-const MODEL_NAME = 'gemini-3-pro-preview';
+const FAST_MODEL = 'gemini-3-flash-preview'; // Speed & Audio Accuracy
+const DEEP_MODEL = 'gemini-3-pro-preview';   // Reasoning & Strategy
 
 const RD_IDENTITY_BIBLE = `
 NAME: Rume Dominic (RD)
@@ -60,42 +61,32 @@ Step 3: Generate post avoiding banned words.
 Step 4: Scrutinize your own output before returning.
 `;
 
-let chatSession: Chat | null = null;
 let aiInstance: GoogleGenAI | null = null;
 
+const getAI = () => {
+  if (!aiInstance) {
+    aiInstance = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  }
+  return aiInstance;
+};
+
 export const initializeSession = () => {
-  aiInstance = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  chatSession = aiInstance.chats.create({
-    model: MODEL_NAME,
-    config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
-      responseMimeType: 'application/json',
-    },
-  });
-  return chatSession;
+  return getAI();
 };
 
 export const processInput = async (
   input: string | { mimeType: string; data: string },
   isRefinement: boolean = false
 ): Promise<GeneratedContent> => {
-  if (!chatSession) {
-    initializeSession();
-  }
+  const ai = getAI();
 
-  if (!chatSession) {
-    throw new Error("Failed to initialize Gemini session.");
-  }
-
-  let messageContent: string | { parts: any[] };
-
+  let messageContent: any;
   if (typeof input === 'string') {
-    // Text input
     messageContent = isRefinement 
       ? `REFINE the previous post based on this feedback: "${input}". Ensure JSON format is maintained. Remember the RD Voice: Calm, Authoritative, Witty.`
       : `Generate a LinkedIn/Medium/X post based on this raw thought: "${input}"`;
   } else {
-    // Audio input (Base64)
+    // Audio input
     messageContent = {
       parts: [
         {
@@ -105,17 +96,24 @@ export const processInput = async (
           }
         },
         {
-          text: "Transcribe this audio, extract the core insight, and generate a high-impact post following the RD-1 protocols."
+          text: "Transcribe this audio. IGNORE silence or background noise. Extract the core business insight. Generate a high-impact post in JSON format."
         }
       ]
     };
   }
 
   try {
-    const response: GenerateContentResponse = await chatSession.sendMessage({ message: messageContent });
+    // Use FLASH model for low latency audio/text processing
+    const response = await ai.models.generateContent({
+        model: FAST_MODEL,
+        contents: messageContent,
+        config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            responseMimeType: 'application/json'
+        }
+    });
+
     const text = response.text || "{}";
-    
-    // Parse JSON response
     const data = JSON.parse(text);
 
     return {
@@ -132,10 +130,8 @@ export const processInput = async (
 };
 
 export const scrutinizeContent = async (): Promise<GeneratedContent> => {
-  if (!chatSession) {
-    throw new Error("No active session to scrutinize.");
-  }
-
+  const ai = getAI();
+  // Use PRO model for deep reasoning/scrutiny
   const prompt = `
     SCRUTINIZE MODE ACTIVATED.
     Role: act as a hostile critic. 
@@ -145,7 +141,15 @@ export const scrutinizeContent = async (): Promise<GeneratedContent> => {
   `;
 
   try {
-    const response: GenerateContentResponse = await chatSession.sendMessage({ message: prompt });
+    const response = await ai.models.generateContent({
+        model: DEEP_MODEL, // Deep reasoning
+        contents: prompt,
+        config: {
+            systemInstruction: SYSTEM_INSTRUCTION,
+            responseMimeType: 'application/json'
+        }
+    });
+    
     const text = response.text || "{}";
     const data = JSON.parse(text);
 
@@ -163,10 +167,8 @@ export const scrutinizeContent = async (): Promise<GeneratedContent> => {
 };
 
 export const generateStrategy = async (redditContext: string): Promise<StrategyResult> => {
-  if (!aiInstance) initializeSession();
-  if (!aiInstance) throw new Error("AI not initialized");
-
-  // This prompt embodies the "Content Strategist" persona requested
+  const ai = getAI();
+  // Use PRO model for strategic reasoning
   const strategyPrompt = `
     IDENTITY: You are a World-Class Content Strategist for Rume Dominic (RD).
     CONTEXT: ${RD_IDENTITY_BIBLE}
@@ -180,22 +182,16 @@ export const generateStrategy = async (redditContext: string): Promise<StrategyR
     - Identify the specific struggle.
     - Confirm the "Activity Level" is high (implied by the user providing this data).
     - Ensure it matches the RD Ideal Customer Profile (Entrepreneurs, Investors, Tech-savvy).
-    - If the problem is irrelevant to [Wealth, Blockchain, AI, Strategy, Infrastructure], pivot it to fit or reject it (but try to pivot first).
-
+    
     STEP 2: GENERATE 15 IDEAS
     1. 5 "How to" articles (tactical, step-by-step).
     2. 5 listicles (tools, mistakes, tips, examples).
     3. 3 contrarian takes (challenge conventional advice).
     4. 2 frameworks (systematic approaches with memorable names).
 
-    REQUIREMENTS FOR EACH IDEA:
-    - Headline: Scroll-stopping, specific, not generic. No "Ultimate Guide".
-    - Hook: First line that pulls readers in.
-    - Angle: What makes this different? Why is this the "RD Way"?
-
     OUTPUT JSON FORMAT:
     {
-      "painPointAnalysis": "A short summary of the core pain point identified and why it fits the RD ICP.",
+      "painPointAnalysis": "A short summary of the core pain point identified.",
       "howTo": [{ "headline": "...", "hook": "...", "angle": "..." }],
       "listicles": [{ "headline": "...", "hook": "...", "angle": "..." }],
       "contrarian": [{ "headline": "...", "hook": "...", "angle": "..." }],
@@ -204,9 +200,8 @@ export const generateStrategy = async (redditContext: string): Promise<StrategyR
   `;
 
   try {
-    // Use a fresh single-turn model for strategy
-    const result = await aiInstance.models.generateContent({
-      model: MODEL_NAME,
+    const result = await ai.models.generateContent({
+      model: DEEP_MODEL,
       contents: strategyPrompt,
       config: { responseMimeType: 'application/json' }
     });
